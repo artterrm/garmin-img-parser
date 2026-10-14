@@ -1281,28 +1281,37 @@ class GarminIMG:
         snap_to_grid=False — coordinates are written with normal rounding
         to 5-6 decimal places (as before).
         """
-        # zoom -> bits_per_coord map
         level_bits = {lvl.zoom: lvl.bits for lvl in self.levels}
 
         max_bits = max(l.bits for l in self.levels) if self.levels else 24
         if snap_to_grid:
-            # Grid for 24 bits: 0.0000214577. 7 digits is more than enough.
             prec = 7
         else:
             prec = 6 if max_bits >= 25 else 5
         fmt = f"{{:.{prec}f}}"
 
         def snap_value(value, level):
-            """Round to the Garmin grid for the given level."""
+            """
+            Round coordinate to the Garmin grid for the given level.
+
+            Grid step = 360 / 2^bits_per_coord.
+            Uses round-half-away-from-zero (same as C++ round() and
+            GPSMapEdit), which gives identical results for positive
+            and negative coordinates — important for maps in the
+            southern hemisphere and western longitudes.
+            """
             if not snap_to_grid:
                 return value
             bits = level_bits.get(level)
             if not bits:
                 return value
             step = 360.0 / (1 << bits)
-            # floor(x + 0.5) — round "to nearest, ties up",
-            # same as fast_floor_d in GPSMapEdit (GarminRound.cpp).
-            return math.floor(value / step + 0.5) * step
+            scaled = value / step
+            if scaled >= 0:
+                snapped = math.floor(scaled + 0.5)
+            else:
+                snapped = math.ceil(scaled - 0.5)
+            return snapped * step
 
         def ok(lvl):
             return levels is None or lvl in levels
@@ -1387,12 +1396,11 @@ class GarminIMG:
                 for pl in group:
                     by_level.setdefault(pl.level, []).append(pl)
 
-                def write_line_block(f, pl):
-                    coords = ",".join(
+                def write_line_block(pl):
+                    return ",".join(
                         f"({fmt.format(snap_value(y, pl.level))},"
                         f"{fmt.format(snap_value(x, pl.level))})"
                         for (x, y) in pl.points)
-                    return coords
 
                 if all(len(v) == 1 for v in by_level.values()):
                     f.write("[POLYLINE]\r\n")
@@ -1401,7 +1409,7 @@ class GarminIMG:
                     if dir_: f.write("DirIndicator=1\r\n")
                     for lvl in sorted(by_level):
                         pl = by_level[lvl][0]
-                        f.write(f"Data{lvl}={write_line_block(f, pl)}\r\n")
+                        f.write(f"Data{lvl}={write_line_block(pl)}\r\n")
                     f.write("[END]\r\n\r\n")
                 else:
                     for pl in group:
@@ -1409,7 +1417,7 @@ class GarminIMG:
                         f.write(f"Type=0x{t:x}\r\n")
                         if lbl: f.write(f"Label={lbl}\r\n")
                         if dir_: f.write("DirIndicator=1\r\n")
-                        f.write(f"Data{pl.level}={write_line_block(f, pl)}\r\n")
+                        f.write(f"Data{pl.level}={write_line_block(pl)}\r\n")
                         f.write("[END]\r\n\r\n")
 
             # --- Polygons ---
@@ -1446,7 +1454,6 @@ class GarminIMG:
                         if lbl: f.write(f"Label={lbl}\r\n")
                         f.write(f"Data{pg.level}={write_poly_block(pg)}\r\n")
                         f.write("[END]\r\n\r\n")
-    
 
     def export_geojson(self, path):
         features = []
@@ -1601,7 +1608,6 @@ class GarminIMG:
 
         Returns a dict {'points': N, 'lines': N, 'polygons': N}.
         """
-        import os
         os.makedirs(out_dir, exist_ok=True)
 
         result = {}
@@ -1620,6 +1626,57 @@ class GarminIMG:
                     os.path.join(out_dir, kind),
                     kinds=(kind,), filter_level=level)
             result[kind] = n
+        return result
+
+    def export_by_types_shapefiles(self, out_dir, *, level=None,
+                                    kinds=('points', 'lines', 'polygons')):
+        """
+        Export with per-type split.
+
+        File name: <prefix>_<hex>.shp
+            points_1400.shp     — points of type 0x1400
+            points_1E00.shp     — points of type 0x1E00
+            lines_06.shp        — lines of type 0x06
+            polygons_50.shp     — polygons of type 0x50
+
+        All files in a single out_dir.
+        """
+        from collections import Counter
+        os.makedirs(out_dir, exist_ok=True)
+        result = {}
+
+        for kind in kinds:
+            if kind == 'points':
+                counter = Counter(p.type for p in self.iter_points()
+                                  if level is None or p.level == level)
+                fmt = lambda t: f"{t:04X}"
+                prefix = "points"
+            elif kind == 'lines':
+                counter = Counter(pl.type for pl in self.iter_polylines()
+                                  if level is None or pl.level == level)
+                fmt = lambda t: f"{t:02X}"
+                prefix = "lines"
+            elif kind == 'polygons':
+                counter = Counter(pg.type for pg in self.iter_polygons()
+                                  if level is None or pg.level == level)
+                fmt = lambda t: f"{t:02X}"
+                prefix = "polygons"
+            else:
+                continue
+
+            if not counter:
+                continue
+
+            result[kind] = {}
+            for t in sorted(counter):
+                fname = f"{prefix}_{fmt(t)}"
+                base = os.path.join(out_dir, fname)
+                self.export_shapefile(base, kinds=(kind,),
+                                      filter_types={t},
+                                      filter_level=level)
+                result[kind][t] = base + ".shp"
+                log.info("%s.shp: %d objects", fname, counter[t])
+
         return result
 
     def polygonize_shapefile(self, base_path, *,
@@ -1832,7 +1889,7 @@ class GarminIMGContainer:
 
     def _build_submaps(self):
         skipped_nt = []; skipped_srv = []
-        mps = self._get_mps()   # read MPS once
+        mps = self._get_mps()
 
         for submap_id, types in self._groups.items():
             if _is_service_only(types):
@@ -1848,7 +1905,6 @@ class GarminIMGContainer:
                     offsets[stype] = first.blocks[0] * self._block_size
             if 'TRE' not in offsets or 'RGN' not in offsets: continue
 
-            # Name from MPS
             sid_int = _hex_id_to_int(submap_id)
             info = mps.get(sid_int, {}) if sid_int is not None else {}
             submap_name = (info.get('segment')
@@ -1954,27 +2010,20 @@ class GarminIMGContainer:
 
     def extract_all_by_name(self, out_dir, *, level=0,
                             kinds=('points', 'lines', 'polygons'),
+                            by_types=True,
                             verbose=True):
         """
         Batch export of all classic maps from the container into separate
         folders named after the map name from MPS.
 
-        Creates shapefile layers from `kinds` in each folder (only those
-        that contain objects). Only the specified level is exported.
-
-        Returns (summary, errors):
-            summary — dict {folder_name: {'points': N, 'lines': N, 'polygons': N}}
-            errors — list of (submap_id, name, error_message)
-
-        Example:
-            cont.extract_all_by_name("extracted", level=0)
-            # → extracted/Balaganskoe/points.shp, lines.shp, polygons.shp
+        by_types=True  — per-type files inside each folder:
+                         points_1400.shp, lines_06.shp, polygons_50.shp
+        by_types=False — common files points.shp, lines.shp, polygons.shp.
         """
         os.makedirs(out_dir, exist_ok=True)
 
         summary = {}
         errors = []
-        total = {'points': 0, 'lines': 0, 'polygons': 0}
         t0 = time.time()
 
         for i, img in enumerate(self._submaps, 1):
@@ -1982,7 +2031,6 @@ class GarminIMGContainer:
             name = img.get_display_name()
             folder_name = _safe_folder_name(name, sid)
 
-            # Uniquify on collision
             base = folder_name
             k = 1
             while os.path.exists(os.path.join(out_dir, folder_name, ".done")):
@@ -1991,22 +2039,36 @@ class GarminIMGContainer:
 
             folder = os.path.join(out_dir, folder_name)
             try:
-                res = img.export_all_shapefiles(folder, level=level,
-                                                 kinds=kinds)
-                summary[folder_name] = res
-                total['points']   += res.get('points', 0)
-                total['lines']    += res.get('lines', 0)
-                total['polygons'] += res.get('polygons', 0)
+                if by_types:
+                    res = img.export_by_types_shapefiles(
+                        folder, level=level, kinds=kinds)
+                    n_types = sum(len(v) for v in res.values())
+                    n_total = 0
+                    for kind in kinds:
+                        if kind == 'points':
+                            n_total += sum(1 for p in img.iter_points()
+                                           if level is None or p.level == level)
+                        elif kind == 'lines':
+                            n_total += sum(1 for pl in img.iter_polylines()
+                                           if level is None or pl.level == level)
+                        elif kind == 'polygons':
+                            n_total += sum(1 for pg in img.iter_polygons()
+                                           if level is None or pg.level == level)
+                    summary[folder_name] = {'types': n_types, 'total': n_total}
+                    if verbose:
+                        print(f"{i:>3}  {sid:<10} {folder_name:<28}  "
+                              f"{n_types:>4} types, {n_total:>8} objects")
+                else:
+                    res = img.export_all_shapefiles(folder, level=level,
+                                                     kinds=kinds)
+                    summary[folder_name] = res
+                    if verbose:
+                        print(f"{i:>3}  {sid:<10} {folder_name:<28}  "
+                              f"{sum(res.values()):>8} objects")
 
-                # Completion marker
                 with open(os.path.join(folder, ".done"), "w") as f:
-                    f.write(f"submap_id={sid}\nname={name}\nlevel={level}\n")
-
-                if verbose:
-                    print(f"{i:>3}  {sid:<10} {folder_name:<28}  "
-                          f"{res.get('points',0):>7}  "
-                          f"{res.get('lines',0):>8}  "
-                          f"{res.get('polygons',0):>9}")
+                    f.write(f"submap_id={sid}\nname={name}\n"
+                            f"level={level}\nby_types={by_types}\n")
             except Exception as e:
                 errors.append((sid, name, str(e)))
                 if verbose:
@@ -2019,10 +2081,8 @@ class GarminIMGContainer:
             print()
             print("=" * 70)
             print(f"Done in {dt:.1f} sec ({dt/60:.1f} min)")
-            print(f"Points:   {total['points']:,}")
-            print(f"Lines:    {total['lines']:,}")
-            print(f"Polygons: {total['polygons']:,}")
-            print(f"Errors:   {len(errors)}")
+            print(f"Maps: {len(summary)}")
+            print(f"Errors: {len(errors)}")
 
         return summary, errors
 

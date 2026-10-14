@@ -489,7 +489,7 @@ MIT — см. файл [LICENSE](LICENSE).
 - **John Mechalas** — «Garmin's IMG File Format» (2005)
 - **N. Willink** — «Exploring Garmin's IMG Format» (2015)
 - **Patrick Valsecchi** — JGarminImgParser (Java-библиотека)
-- **Константин Галицкий** — GPSMapEdit
+- **Константин Галичский** — GPSMapEdit
 - Проект **imgdecode**
 
 ## Обратная связь

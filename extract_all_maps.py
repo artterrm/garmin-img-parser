@@ -1,10 +1,10 @@
 """
-Извлекает все классические карты из контейнера gmapsupp.img
-в отдельные папки (по имени карты), каждая — с шейпфайлами
-для точек, линий и полигонов (если есть).
+Extracts all classic maps from a gmapsupp.img container into separate
+folders (by map name), each with shapefiles for points, lines, and
+polygons (if present).
 
-Папка для каждой карты: <out_dir>/<safe_name>/
-Файлы: points.shp, lines.shp, polygons.shp (+ .shx, .dbf, .prj, .cpg)
+Folder for each map: <out_dir>/<safe_name>/
+Files: points.shp, lines.shp, polygons.shp (+ .shx, .dbf, .prj, .cpg)
 """
 import os
 import sys
@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.WARNING, format="%(message)s")
 
 
 def safe_name(name, sid):
-    """Делает безопасное имя папки из имени карты или ID."""
+    """Builds a safe folder name from the map name or ID."""
     base = name or sid or "unnamed"
     base = base.strip() or sid
     bad = '<>:"/\\|?*'
@@ -26,13 +26,13 @@ def safe_name(name, sid):
 
 
 def extract_one(img, out_dir, sub_dir):
-    """Экспортирует одну карту — три слоя."""
+    """Exports a single map — three layers."""
     folder = os.path.join(out_dir, sub_dir)
     os.makedirs(folder, exist_ok=True)
 
     results = {}
 
-    # 1. Точки
+    # 1. Points
     n_points = 0
     try:
         n_points = sum(1 for _ in img.iter_points())
@@ -42,10 +42,10 @@ def extract_one(img, out_dir, sub_dir):
                 kinds=('points',))
             results['points'] = n_points
     except Exception as e:
-        logging.warning("  points: ошибка %s", e)
+        logging.warning("  points: error %s", e)
         results['points'] = f"ERR: {e}"
 
-    # 2. Линии
+    # 2. Lines
     n_lines = 0
     try:
         n_lines = sum(1 for _ in img.iter_polylines())
@@ -55,10 +55,10 @@ def extract_one(img, out_dir, sub_dir):
                 kinds=('lines',))
             results['lines'] = n_lines
     except Exception as e:
-        logging.warning("  lines: ошибка %s", e)
+        logging.warning("  lines: error %s", e)
         results['lines'] = f"ERR: {e}"
 
-    # 3. Полигоны (если есть)
+    # 3. Polygons (if any)
     n_poly = 0
     try:
         n_poly = sum(1 for _ in img.iter_polygons())
@@ -68,7 +68,7 @@ def extract_one(img, out_dir, sub_dir):
                 kinds=('polygons',))
             results['polygons'] = n_poly
     except Exception as e:
-        logging.warning("  polygons: ошибка %s", e)
+        logging.warning("  polygons: error %s", e)
         results['polygons'] = f"ERR: {e}"
 
     return results
@@ -76,7 +76,7 @@ def extract_one(img, out_dir, sub_dir):
 
 def main():
     if len(sys.argv) < 2:
-        print("Использование: python extract_all_maps.py <gmapsupp.img> [out_dir]")
+        print("Usage: python extract_all_maps.py <gmapsupp.img> [out_dir]")
         sys.exit(1)
 
     path = sys.argv[1]
@@ -84,20 +84,20 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
 
     t0 = time.time()
-    print(f"Открываю: {path}")
+    print(f"Opening: {path}")
     cont = open_img(path)
 
     if not hasattr(cont, "submaps"):
-        print("Это одиночная карта, а не контейнер.")
-        print("Используйте open_img(...).export_shapefile(...)")
+        print("This is a single map, not a container.")
+        print("Use open_img(...).export_shapefile(...)")
         sys.exit(1)
 
     n_maps = len(cont)
-    print(f"Классических карт: {n_maps}")
-    print(f"Папка назначения: {os.path.abspath(out_dir)}")
-    print(f"Пропущено NT:      {cont.n_nt_skipped}")
+    print(f"Classic maps: {n_maps}")
+    print(f"Destination folder: {os.path.abspath(out_dir)}")
+    print(f"NT skipped:         {cont.n_nt_skipped}")
     print()
-    print(f"{'#':>3}  {'Карта':<38}  {'Точки':>8}  {'Линии':>9}  {'Полигоны':>9}  {'Папка'}")
+    print(f"{'#':>3}  {'Map':<38}  {'Points':>8}  {'Lines':>9}  {'Polygons':>9}  {'Folder'}")
     print("-" * 110)
 
     total = {'points': 0, 'lines': 0, 'polygons': 0}
@@ -105,11 +105,11 @@ def main():
 
     for i, img in enumerate(cont, 1):
         sid = img.submap_id or f"sub_{img.metadata.map_id}"
-        # Имя из MPS уже в metadata.name (после патча)
+        # Name from MPS is already in metadata.name (after the patch)
         name = img.metadata.name or sid
         folder_name = safe_name(name, sid)
 
-        # Уникализируем имя, если есть коллизия
+        # Uniquify the name on collision
         base = folder_name
         k = 1
         while os.path.exists(os.path.join(out_dir, folder_name)) \
@@ -119,7 +119,7 @@ def main():
 
         try:
             res = extract_one(img, out_dir, folder_name)
-            # Маркер завершения
+            # Completion marker
             with open(os.path.join(out_dir, folder_name, ".done"), "w") as f:
                 f.write(f"submap_id={sid}\nname={name}\n")
 
@@ -134,18 +134,18 @@ def main():
                   f"{n_p:>8}  {n_l:>9}  {n_g:>9}  {folder_name}/")
         except Exception as e:
             errors.append((sid, name, str(e)))
-            print(f"{i:>3}  {sid:<10} {name:<27}  ОШИБКА: {e}")
+            print(f"{i:>3}  {sid:<10} {name:<27}  ERROR: {e}")
         finally:
             img.clear_cache()
 
     elapsed = time.time() - t0
     print()
     print("=" * 70)
-    print(f"Готово за {elapsed:.1f} сек ({elapsed/60:.1f} мин)")
-    print(f"Всего точек:    {total['points']:,}")
-    print(f"Всего линий:    {total['lines']:,}")
-    print(f"Всего полигонов: {total['polygons']:,}")
-    print(f"Ошибок:          {len(errors)}")
+    print(f"Done in {elapsed:.1f} sec ({elapsed/60:.1f} min)")
+    print(f"Total points:    {total['points']:,}")
+    print(f"Total lines:     {total['lines']:,}")
+    print(f"Total polygons:  {total['polygons']:,}")
+    print(f"Errors:          {len(errors)}")
     if errors:
         for sid, name, err in errors:
             print(f"  {sid} ({name}): {err}")

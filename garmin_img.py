@@ -1,19 +1,19 @@
 """
-garmin_img — Python-библиотека для чтения файлов Garmin IMG.
+garmin_img — Python library for reading Garmin IMG files.
 
-Возможности:
-  • Одиночные .img и контейнеры gmapsupp.img с несколькими картами
-  • Автоматический пропуск NT-карт
-  • Полные словари типов Garmin (по GarminTypes.cpp)
-  • 28-битный RGN offset (правка из JGarminImgParser)
-  • Extra bit только для longitude
-  • Экспорт: MP, GeoJSON, GPX, CSV, Shapefile
-  • Полигонизация замкнутых линий (polygonize_shapefile)
-  • Дедупликация объектов по уровням (export_dedup_shapefile)
-  • Пакетный экспорт по именам карт (extract_all_by_name)
+Features:
+  • Single .img files and gmapsupp.img containers with multiple maps
+  • Automatic skipping of NT maps
+  • Full Garmin type dictionaries (based on GarminTypes.cpp)
+  • 28-bit RGN offset (fix from JGarminImgParser)
+  • Extra bit for longitude only
+  • Export: MP, GeoJSON, GPX, CSV, Shapefile
+  • Polygonization of closed lines (polygonize_shapefile)
+  • Object deduplication across zoom levels (export_dedup_shapefile)
+  • Batch export by map names (extract_all_by_name)
 
-Зависимости: pyshp (только для shapefile-методов).
-Лицензия: MIT.
+Dependencies: pyshp (only for shapefile methods).
+License: MIT.
 """
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ EXTRA_BIT_ONLY_X  = True
 
 
 # ================================================================
-# ТИПЫ GARMIN
+# GARMIN TYPES
 # ================================================================
 
 POINT_TYPES = {
@@ -258,7 +258,7 @@ _SERVICE_SUBFILES = {'MPS', 'TDB', 'MDR', 'SRT', 'MDX',
 
 
 # ================================================================
-# Предикаты
+# Predicates
 # ================================================================
 
 def is_city_point(t):    return 0x0100 <= (t & 0xFFFF00) <= 0x1100
@@ -289,7 +289,7 @@ def is_land_polygon(t):
 
 
 # ================================================================
-# Регистрация типов
+# Type registration
 # ================================================================
 
 def register_point_type(code, name):    POINT_TYPES[int(code)] = str(name)
@@ -432,7 +432,7 @@ class _Reader:
 
 
 # ================================================================
-# Data-классы
+# Data classes
 # ================================================================
 
 @dataclass
@@ -478,7 +478,7 @@ class Metadata:
     north: float; east: float; south: float; west: float
     locked: bool; size_bytes: int
     submap_id: Optional[str] = None
-    submap_name: Optional[str] = None   # имя из MPS (для подкарт)
+    submap_name: Optional[str] = None   # name from MPS (for submaps)
 
 
 # ================================================================
@@ -585,7 +585,7 @@ class LBL:
 
 
 # ================================================================
-# Битпоток (extra bit только для X)
+# Bitstream (extra bit for X only)
 # ================================================================
 
 def decode_bitstream(bs, shift, bitdef, extra_bit, x0, y0):
@@ -615,7 +615,7 @@ def decode_bitstream(bs, shift, bitdef, extra_bit, x0, y0):
     if bpy > 9: bpy = 2*bpy - 9
     cbits_y += bpy + 2
 
-    # Extra bit — отдельный бит перед парой координат.
+    # Extra bit is a separate bit before the coordinate pair.
     if extra_bit:
         if EXTRA_BIT_ONLY_X:
             cbits_point = cbits_x + cbits_y + 1
@@ -662,7 +662,7 @@ def decode_bitstream(bs, shift, bitdef, extra_bit, x0, y0):
 
 
 # ================================================================
-# XOR / поиск субфайлов / FAT / MPS
+# XOR / subfile lookup / FAT / MPS
 # ================================================================
 
 def _find_subfiles(data):
@@ -703,8 +703,8 @@ def _decode_xor(raw):
         if b'GARMIN TRE' in dec or b'GARMIN RGN' in dec:
             return dec, key
     if len(raw) > 20 * 1024 * 1024:
-        raise GarminImgError(f"Файл {len(raw)//1024//1024} МБ, "
-                             f"сигнатуры не найдены. Возможно, NT.")
+        raise GarminImgError(f"File is {len(raw)//1024//1024} MB, "
+                             f"signatures not found. Possibly NT.")
     for key in range(1, 256):
         dec = _xor_bytes(raw, key)
         if b'GARMIN TRE' in dec or b'GARMIN RGN' in dec:
@@ -937,7 +937,7 @@ def _parse_polys(data, s, e, sd, lbl, is_polygon):
 
 
 # ================================================================
-# Утилиты
+# Utilities
 # ================================================================
 
 def line_length_m(points):
@@ -962,7 +962,7 @@ def _xml_escape(s):
              .replace('>','&gt;').replace('"','&quot;'))
 
 def _safe_folder_name(name, sid=None):
-    """Очищает имя папки от недопустимых символов Windows."""
+    """Sanitizes a folder name from invalid Windows characters."""
     base = (name or sid or "unnamed").strip()
     if not base:
         base = sid or "unnamed"
@@ -998,8 +998,8 @@ class GarminIMG:
         self.submap_id = submap_id
 
         if 'TRE' not in self._subfiles or 'RGN' not in self._subfiles:
-            raise GarminImgError(f"Не найден TRE или RGN в {path}. "
-                                 f"Найдены: {list(self._subfiles.keys())}")
+            raise GarminImgError(f"TRE or RGN not found in {path}. "
+                                 f"Found: {list(self._subfiles.keys())}")
 
         rgn_off = self._subfiles['RGN']
         rr = _Reader(self._data, rgn_off)
@@ -1036,12 +1036,12 @@ class GarminIMG:
 
     def get_display_name(self):
         """
-        Человекочитаемое имя карты.
+        Human-readable map name.
 
-        Приоритет:
-          1. submap_name из MPS (для подкарт контейнера)
-          2. name из шапки IMG (для одиночных файлов)
-          3. имя файла без пути
+        Priority:
+          1. submap_name from MPS (for container submaps)
+          2. name from IMG header (for single files)
+          3. file name without path
         """
         if self.metadata.submap_name:
             return self.metadata.submap_name
@@ -1235,25 +1235,25 @@ class GarminIMG:
         return bbox(pts) if pts else None
 
     def summary(self):
-        out = [f"Карта: {self.get_display_name()!r} "
+        out = [f"Map: {self.get_display_name()!r} "
                f"(id={self.metadata.map_id}, "
-               f"{self.metadata.size_bytes/1024:.1f} КБ)"]
-        out.append(f"Границы: N={self.metadata.north:.4f} "
+               f"{self.metadata.size_bytes/1024:.1f} KB)"]
+        out.append(f"Bounds: N={self.metadata.north:.4f} "
                    f"S={self.metadata.south:.4f} "
                    f"W={self.metadata.west:.4f} "
                    f"E={self.metadata.east:.4f}")
-        out.append(f"Кодировка: cp{self.metadata.codepage}, "
-                   f"{self.metadata.encoding}-бит")
-        out.append(f"Уровней: {len(self.levels)}, "
-                   f"subdivision'ов: {len(self.subdivisions)}")
-        out.append(f"Точек:     {len(self.points)}")
-        out.append(f"Линий:     {len(self.polylines)}")
-        out.append(f"Полигонов: {len(self.polygons)}")
+        out.append(f"Encoding: cp{self.metadata.codepage}, "
+                   f"{self.metadata.encoding}-bit")
+        out.append(f"Levels: {len(self.levels)}, "
+                   f"subdivisions: {len(self.subdivisions)}")
+        out.append(f"Points:   {len(self.points)}")
+        out.append(f"Lines:    {len(self.polylines)}")
+        out.append(f"Polygons: {len(self.polygons)}")
         present = self.types_present()
         for kind in ('point', 'line', 'polygon'):
             d = present[kind]
             if not d: continue
-            out.append(f"\n{kind.upper()} по типам:")
+            out.append(f"\n{kind.upper()} by type:")
             for t, n in sorted(d.items(), key=lambda kv: -kv[1]):
                 if kind == 'point':   name = guess_point_type(t)
                 elif kind == 'line':  name = guess_line_type(t)
@@ -1267,41 +1267,41 @@ class GarminIMG:
                 f"name={self.get_display_name()!r}{sid})")
 
     # ------------------------------------------------------------
-    # Экспорт MP
+    # Export to MP
     # ------------------------------------------------------------
     def export_mp(self, path, *, levels=None, snap_to_grid=False):
         """
-        Экспорт в Polish Format.
+        Export to Polish Format.
 
-        snap_to_grid=True — координаты перед записью округляются на сетку
-        Garmin (шаг 360 / 2^bits_per_coord для каждого уровня). Это делает
-        MP-файл совместимым с GPSMapEdit: при загрузке координаты не будут
-        сдвинуты (галка «Притягивать к сетке» в Настройках).
+        snap_to_grid=True — coordinates are rounded to the Garmin grid
+        (step 360 / 2^bits_per_coord for each level) before writing.
+        This makes the MP file compatible with GPSMapEdit: coordinates
+        won't be shifted on load (the "Snap to grid" checkbox in Settings).
 
-        snap_to_grid=False — координаты пишутся с обычным округлением
-        до 5-6 знаков (как было раньше).
+        snap_to_grid=False — coordinates are written with normal rounding
+        to 5-6 decimal places (as before).
         """
-        # Словарь zoom -> bits_per_coord
+        # zoom -> bits_per_coord map
         level_bits = {lvl.zoom: lvl.bits for lvl in self.levels}
 
         max_bits = max(l.bits for l in self.levels) if self.levels else 24
         if snap_to_grid:
-            # Сетка для 24 бит: 0.0000214577. 7 знаков хватает с запасом.
+            # Grid for 24 bits: 0.0000214577. 7 digits is more than enough.
             prec = 7
         else:
             prec = 6 if max_bits >= 25 else 5
         fmt = f"{{:.{prec}f}}"
 
         def snap_value(value, level):
-            """Округление на сетку Garmin для данного уровня."""
+            """Round to the Garmin grid for the given level."""
             if not snap_to_grid:
                 return value
             bits = level_bits.get(level)
             if not bits:
                 return value
             step = 360.0 / (1 << bits)
-            # floor(x + 0.5) — округление «к ближайшему, при .5 вверх»,
-            # как fast_floor_d в GPSMapEdit (GarminRound.cpp).
+            # floor(x + 0.5) — round "to nearest, ties up",
+            # same as fast_floor_d in GPSMapEdit (GarminRound.cpp).
             return math.floor(value / step + 0.5) * step
 
         def ok(lvl):
@@ -1374,7 +1374,7 @@ class GarminIMG:
                                 f"({fmt.format(lat)},{fmt.format(lon)})\r\n")
                         f.write("[END]\r\n\r\n")
 
-            # --- Полилинии ---
+            # --- Polylines ---
             line_groups = {}
             for pl in self.polylines:
                 if not ok(pl.level) or not pl.points: continue
@@ -1412,7 +1412,7 @@ class GarminIMG:
                         f.write(f"Data{pl.level}={write_line_block(f, pl)}\r\n")
                         f.write("[END]\r\n\r\n")
 
-            # --- Полигоны ---
+            # --- Polygons ---
             poly_groups = {}
             for pg in self.polygons:
                 if not ok(pg.level) or not pg.points: continue
@@ -1510,11 +1510,11 @@ class GarminIMG:
         try:
             import shapefile
         except ImportError:
-            raise GarminImgError("Нужен pyshp. Установите: pip install pyshp")
+            raise GarminImgError("pyshp is required. Install: pip install pyshp")
         if 'lines' in kinds:      shp_type = shapefile.POLYLINE
         elif 'points' in kinds:   shp_type = shapefile.POINT
         elif 'polygons' in kinds: shp_type = shapefile.POLYGON
-        else: raise GarminImgError(f"Неизвестные kinds={kinds}")
+        else: raise GarminImgError(f"Unknown kinds={kinds}")
 
         w = shapefile.Writer(base_path, shapeType=shp_type)
         w.encoding = 'utf-8'
@@ -1589,17 +1589,17 @@ class GarminIMG:
                     'UNIT["Degree",0.0174532925199433]]')
         with open(f"{base_path}.cpg", 'w') as f:
             f.write("UTF-8")
-        log.info("Shapefile: %s.shp (%d объектов)", base_path, n)
+        log.info("Shapefile: %s.shp (%d objects)", base_path, n)
 
     def export_all_shapefiles(self, out_dir, *, level=None,
                               kinds=('points', 'lines', 'polygons')):
         """
-        Экспорт всех слоёв (points/lines/polygons) одной командой.
+        Export all layers (points/lines/polygons) with a single call.
 
-        Создаёт в out_dir: points.shp, lines.shp, polygons.shp (только
-        те слои, где есть объекты).
+        Creates points.shp, lines.shp, polygons.shp in out_dir (only
+        those layers that contain objects).
 
-        Возвращает словарь {'points': N, 'lines': N, 'polygons': N}.
+        Returns a dict {'points': N, 'lines': N, 'polygons': N}.
         """
         import os
         os.makedirs(out_dir, exist_ok=True)
@@ -1626,11 +1626,11 @@ class GarminIMG:
                              types=(0x1D,),
                              tolerance=1e-6,
                              filter_level=None):
-        """Экспорт замкнутых линий указанных типов как полигонов."""
+        """Export closed lines of the given types as polygons."""
         try:
             import shapefile
         except ImportError:
-            raise GarminImgError("Нужен pyshp. Установите: pip install pyshp")
+            raise GarminImgError("pyshp is required. Install: pip install pyshp")
 
         types = set(int(t) for t in types)
 
@@ -1688,17 +1688,17 @@ class GarminIMG:
                     'UNIT["Degree",0.0174532925199433]]')
         with open(f"{base_path}.cpg", 'w') as f:
             f.write("UTF-8")
-        log.info("Polygonize %s: %d полигонов, %d незамкнутых отброшено",
+        log.info("Polygonize %s: %d polygons, %d unclosed dropped",
                  base_path, n_closed, n_open)
         return n_closed, n_open
 
     def export_dedup_shapefile(self, base_path, *, kind='points',
                                 filter_types=None, filter_level=None):
-        """Экспорт с дедупликацией объектов по уровням."""
+        """Export with deduplication of objects across zoom levels."""
         try:
             import shapefile as shp
         except ImportError:
-            raise GarminImgError("Нужен pyshp. Установите: pip install pyshp")
+            raise GarminImgError("pyshp is required. Install: pip install pyshp")
 
         shp_type = {'points': shp.POINT,
                     'lines': shp.POLYLINE,
@@ -1758,7 +1758,7 @@ class GarminIMG:
                     'UNIT["Degree",0.0174532925199433]]')
         with open(f"{base_path}.cpg", 'w') as f:
             f.write("UTF-8")
-        log.info("%s: %d уникальных из %d", base_path, n,
+        log.info("%s: %d unique out of %d", base_path, n,
                  sum(len(v) for v in groups.values()))
         return n
 
@@ -1784,7 +1784,7 @@ class GarminIMG:
             if n: self.export_shapefile(base_path, kinds=('polygons',),
                                         filter_types={ptype})
             return n
-        raise ValueError(f"kind = line/point/polygon, не {kind!r}")
+        raise ValueError(f"kind must be line/point/polygon, not {kind!r}")
 
     def export_roads_shapefile(self, base_path, level=None):
         self.export_shapefile(base_path, kinds=('lines',),
@@ -1796,7 +1796,7 @@ class GarminIMG:
 
 
 # ================================================================
-# Контейнер
+# Container
 # ================================================================
 
 class GarminIMGContainer:
@@ -1806,7 +1806,7 @@ class GarminIMGContainer:
         self._raw_size = len(raw)
         self._data, self._xor_key = _decode_xor(raw)
         if self._data[0x10:0x16] != b'DSKIMG':
-            raise GarminImgError(f"Не IMG-файл: {path}")
+            raise GarminImgError(f"Not an IMG file: {path}")
         self._groups = _fat_groups(self._data)
         self._block_size = 1 << (self._data[0x61] + self._data[0x62])
         self._mps = None
@@ -1832,7 +1832,7 @@ class GarminIMGContainer:
 
     def _build_submaps(self):
         skipped_nt = []; skipped_srv = []
-        mps = self._get_mps()   # читаем MPS один раз
+        mps = self._get_mps()   # read MPS once
 
         for submap_id, types in self._groups.items():
             if _is_service_only(types):
@@ -1848,7 +1848,7 @@ class GarminIMGContainer:
                     offsets[stype] = first.blocks[0] * self._block_size
             if 'TRE' not in offsets or 'RGN' not in offsets: continue
 
-            # Имя из MPS
+            # Name from MPS
             sid_int = _hex_id_to_int(submap_id)
             info = mps.get(sid_int, {}) if sid_int is not None else {}
             submap_name = (info.get('segment')
@@ -1864,15 +1864,15 @@ class GarminIMGContainer:
                                 _shared_xor=self._xor_key)
                 self._submaps.append(img)
             except Exception as e:
-                log.warning("Не удалось прочитать %s: %s", submap_id, e)
+                log.warning("Failed to read %s: %s", submap_id, e)
         self.n_nt_skipped = len(skipped_nt)
         self.n_service_skipped = len(skipped_srv)
         if skipped_nt:
-            log.info("[NT] Пропущено NT-карт: %d", len(skipped_nt))
+            log.info("[NT] Skipped NT maps: %d", len(skipped_nt))
         if skipped_srv:
-            log.info("[служебные] Пропущено: %d: %s",
+            log.info("[service] Skipped: %d: %s",
                      len(skipped_srv), ", ".join(skipped_srv))
-        log.info("[классические] Прочитано карт: %d", len(self._submaps))
+        log.info("[classic] Maps loaded: %d", len(self._submaps))
 
     def __len__(self): return len(self._submaps)
     def __iter__(self): return iter(self._submaps)
@@ -1947,7 +1947,7 @@ class GarminIMGContainer:
                 p = os.path.join(out_dir, f"{safe}.csv")
                 img.export_csv(p); created.append(p)
             else:
-                raise GarminImgError(f"Неизвестный формат: {export}")
+                raise GarminImgError(f"Unknown format: {export}")
             if clear_after:
                 img.clear_cache(); gc.collect()
         return created
@@ -1956,17 +1956,17 @@ class GarminIMGContainer:
                             kinds=('points', 'lines', 'polygons'),
                             verbose=True):
         """
-        Пакетный экспорт всех классических карт контейнера в отдельные
-        папки, названные по имени карты из MPS.
+        Batch export of all classic maps from the container into separate
+        folders named after the map name from MPS.
 
-        В каждой папке создаёт shapefile-слои из kinds (только те,
-        где есть объекты). Экспортируется только указанный level.
+        Creates shapefile layers from `kinds` in each folder (only those
+        that contain objects). Only the specified level is exported.
 
-        Возвращает (сводка, ошибки):
-            сводка — dict {folder_name: {'points': N, 'lines': N, 'polygons': N}}
-            ошибки — список (submap_id, name, error_message)
+        Returns (summary, errors):
+            summary — dict {folder_name: {'points': N, 'lines': N, 'polygons': N}}
+            errors — list of (submap_id, name, error_message)
 
-        Пример:
+        Example:
             cont.extract_all_by_name("extracted", level=0)
             # → extracted/Balaganskoe/points.shp, lines.shp, polygons.shp
         """
@@ -1982,7 +1982,7 @@ class GarminIMGContainer:
             name = img.get_display_name()
             folder_name = _safe_folder_name(name, sid)
 
-            # Уникализируем при коллизии
+            # Uniquify on collision
             base = folder_name
             k = 1
             while os.path.exists(os.path.join(out_dir, folder_name, ".done")):
@@ -1998,7 +1998,7 @@ class GarminIMGContainer:
                 total['lines']    += res.get('lines', 0)
                 total['polygons'] += res.get('polygons', 0)
 
-                # Маркер завершения
+                # Completion marker
                 with open(os.path.join(folder, ".done"), "w") as f:
                     f.write(f"submap_id={sid}\nname={name}\nlevel={level}\n")
 
@@ -2010,7 +2010,7 @@ class GarminIMGContainer:
             except Exception as e:
                 errors.append((sid, name, str(e)))
                 if verbose:
-                    print(f"{i:>3}  {sid:<10} {folder_name:<28}  ОШИБКА: {e}")
+                    print(f"{i:>3}  {sid:<10} {folder_name:<28}  ERROR: {e}")
             finally:
                 img.clear_cache()
 
@@ -2018,11 +2018,11 @@ class GarminIMGContainer:
             dt = time.time() - t0
             print()
             print("=" * 70)
-            print(f"Готово за {dt:.1f} сек ({dt/60:.1f} мин)")
-            print(f"Точек:    {total['points']:,}")
-            print(f"Линий:    {total['lines']:,}")
-            print(f"Полигонов: {total['polygons']:,}")
-            print(f"Ошибок:   {len(errors)}")
+            print(f"Done in {dt:.1f} sec ({dt/60:.1f} min)")
+            print(f"Points:   {total['points']:,}")
+            print(f"Lines:    {total['lines']:,}")
+            print(f"Polygons: {total['polygons']:,}")
+            print(f"Errors:   {len(errors)}")
 
         return summary, errors
 
@@ -2040,7 +2040,7 @@ def open_img(path):
     with open(path, 'rb') as f: raw = f.read()
     data, _ = _decode_xor(raw)
     if data[0x10:0x16] != b'DSKIMG':
-        raise GarminImgError(f"Не IMG-файл: {path}")
+        raise GarminImgError(f"Not an IMG file: {path}")
     groups = _fat_groups(data)
     n_classic = sum(1 for types in groups.values()
                     if _is_classic_img(types) and not _is_service_only(types))
@@ -2060,8 +2060,8 @@ def open_img(path):
     try: return GarminIMG(path)
     except GarminImgError: pass
     raise GarminImgError(
-        f"В {path} нет классических IMG-карт. "
-        f"Возможно, это NT-контейнер.")
+        f"No classic IMG maps in {path}. "
+        f"Possibly an NT container.")
 
 
 def _cli():
@@ -2078,8 +2078,8 @@ def _cli():
     if cmd == 'info':
         obj = open_img(sys.argv[2])
         if isinstance(obj, GarminIMGContainer):
-            print(f"Контейнер: {sys.argv[2]}")
-            print(f"Карт внутри: {len(obj)}")
+            print(f"Container: {sys.argv[2]}")
+            print(f"Maps inside: {len(obj)}")
             for r in obj.list_light():
                 print(f"  {r['id']:<10} {r['kind']:<8} "
                       f"{r['size']//1024:>8} KB  {r['name']}")
@@ -2095,30 +2095,30 @@ def _cli():
     elif cmd == 'export':
         obj = open_img(sys.argv[2])
         if isinstance(obj, GarminIMGContainer):
-            print("Это контейнер. Используйте 'extract'."); sys.exit(1)
+            print("This is a container. Use 'extract'."); sys.exit(1)
         prefix = sys.argv[3]
         obj.export_mp(prefix + ".mp")
         obj.export_geojson(prefix + ".geojson")
         try:
             obj.export_shapefile(prefix + "_roads.shp", filter_group="road")
         except GarminImgError as e:
-            print(f"Shapefile пропущен: {e}")
-        print(f"Готово: {prefix}.*")
+            print(f"Shapefile skipped: {e}")
+        print(f"Done: {prefix}.*")
     elif cmd == 'extract':
         cont = GarminIMGContainer(sys.argv[2])
         files = cont.extract_all(sys.argv[3], export='shapefile',
                                  kinds=('lines',))
-        print(f"Извлечено {len(files)} карт в {sys.argv[3]}")
+        print(f"Extracted {len(files)} maps to {sys.argv[3]}")
     elif cmd == 'extract-by-name':
         cont = GarminIMGContainer(sys.argv[2])
         out_dir = sys.argv[3] if len(sys.argv) > 3 else "extracted"
         level = int(sys.argv[4]) if len(sys.argv) > 4 else 0
-        print(f"{'#':>3}  {'ID':<10} {'Имя карты':<28}  "
-              f"{'Точки':>7}  {'Линии':>8}  {'Полигоны':>9}")
+        print(f"{'#':>3}  {'ID':<10} {'Map name':<28}  "
+              f"{'Points':>7}  {'Lines':>8}  {'Polygons':>9}")
         print("-" * 90)
         cont.extract_all_by_name(out_dir, level=level)
     else:
-        print(f"Неизвестная команда: {cmd}")
+        print(f"Unknown command: {cmd}")
         sys.exit(1)
 
 

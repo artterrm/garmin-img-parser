@@ -1,8 +1,8 @@
 """
-Экспортирует ОДНУ карту в шейпфайлы (points/lines/polygons).
-Работает и с одиночным .img, и с подкартой из контейнера.
+Exports ONE map to shapefiles (points/lines/polygons).
+Works both with a single .img and with a submap from a container.
 
-Использование:
+Usage:
     python extract_one_map.py <file.img> [out_dir] [submap_id]
 """
 import os
@@ -15,7 +15,7 @@ def extract(img, out_dir):
     os.makedirs(out_dir, exist_ok=True)
     t0 = time.time()
 
-    # 1. Точки
+    # 1. Points
     n_pts = 0
     try:
         n_pts = sum(1 for _ in img.iter_points())
@@ -24,11 +24,11 @@ def extract(img, out_dir):
                 os.path.join(out_dir, "points"), kinds=('points',))
             print(f"  points:    {n_pts:>7}")
         else:
-            print(f"  points:    0 (пропущено)")
+            print(f"  points:    0 (skipped)")
     except Exception as e:
-        print(f"  points:    ОШИБКА: {e}")
+        print(f"  points:    ERROR: {e}")
 
-    # 2. Линии
+    # 2. Lines
     n_lns = 0
     try:
         n_lns = sum(1 for _ in img.iter_polylines())
@@ -37,11 +37,11 @@ def extract(img, out_dir):
                 os.path.join(out_dir, "lines"), kinds=('lines',))
             print(f"  lines:     {n_lns:>7}")
         else:
-            print(f"  lines:     0 (пропущено)")
+            print(f"  lines:     0 (skipped)")
     except Exception as e:
-        print(f"  lines:     ОШИБКА: {e}")
+        print(f"  lines:     ERROR: {e}")
 
-    # 3. Полигоны
+    # 3. Polygons
     n_pgn = 0
     try:
         n_pgn = sum(1 for _ in img.iter_polygons())
@@ -50,11 +50,11 @@ def extract(img, out_dir):
                 os.path.join(out_dir, "polygons"), kinds=('polygons',))
             print(f"  polygons:  {n_pgn:>7}")
         else:
-            print(f"  polygons:  0 (пропущено)")
+            print(f"  polygons:  0 (skipped)")
     except Exception as e:
-        print(f"  polygons:  ОШИБКА: {e}")
+        print(f"  polygons:  ERROR: {e}")
 
-    print(f"\nГотово за {time.time()-t0:.1f} сек → {out_dir}/")
+    print(f"\nDone in {time.time()-t0:.1f} sec -> {out_dir}/")
 
 
 def main():
@@ -69,23 +69,23 @@ def main():
     obj = open_img(path)
 
     if hasattr(obj, "submaps"):
-        # Это контейнер
+        # This is a container
         if submap_id:
             img = obj.find(submap_id)
             if img is None:
-                print(f"Подкарта {submap_id} не найдена")
+                print(f"Submap {submap_id} not found")
                 sys.exit(1)
         else:
-            print(f"Это контейнер. Укажите submap_id третьим аргументом.")
-            print(f"Доступные карты:")
+            print(f"This is a container. Specify submap_id as the third argument.")
+            print(f"Available maps:")
             for r in obj.list_light():
                 print(f"  {r['id']:<10} {r['name']}")
             sys.exit(1)
     else:
-        # Одиночная карта
+        # Single map
         img = obj
 
-    print(f"Карта: {img.metadata.name!r}")
+    print(f"Map: {img.metadata.name!r}")
     print(f"  map_id:  {img.metadata.map_id}")
     print(f"  bounds:  N={img.metadata.north:.4f} "
           f"S={img.metadata.south:.4f} "

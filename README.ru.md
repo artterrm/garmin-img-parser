@@ -490,10 +490,6 @@ MIT — см. файл [LICENSE](LICENSE).
 - **N. Willink** — «Exploring Garmin's IMG Format» (2015)
 - **Patrick Valsecchi** — JGarminImgParser (Java-библиотека)
 - **Константин Галичский** — GPSMapEdit
-  ◦ словари типов Garmin (POINT_TYPES, POLYLINE_TYPES, POLYGON_TYPES);
-  ◦ детальная спецификация структур TRE/RGN/LBL/NET/NOD в C++-коде;
-  ◦ алгоритм декодирования 6-битного LBL;
-  ◦ логика парсинга extended-секций RGN.
 - Проект **imgdecode**
 
 ## Обратная связь
